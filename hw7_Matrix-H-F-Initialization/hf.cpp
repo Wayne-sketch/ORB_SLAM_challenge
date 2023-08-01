@@ -12,10 +12,10 @@ using namespace cv;
 
 #define ORB_N_FEATURE				500	// 需要提取的特征点数目
 #define ORB_N_OCTAVE_LAYERS			8		// 8, 默认值
-#define ORB_FAST_THRESHOLD			20		// 20, default value
-#define ORB_EDGE_THRESHOLD			31		// 31, default value
-#define ORB_PATCH_SIZE				31		// 31, default value
-#define ORB_SCALE					1.2		//  default value 1.2 
+#define ORB_FAST_THRESHOLD			20		// 20, default value  ORB特征点检测中的FAST角点检测的阈值
+#define ORB_EDGE_THRESHOLD			31		// 31, default value  ORB特征点检测中的边缘阈值。
+#define ORB_PATCH_SIZE				31		// 31, default value  ORB特征点检测中的图像块大小
+#define ORB_SCALE					1.2		//  default value 1.2 ORB特征点检测中的金字塔层数
 int main( int argc, char** argv )
 {
     Mat image1 = imread( "../1.png");
@@ -33,17 +33,17 @@ int main( int argc, char** argv )
     orb->setPatchSize(ORB_PATCH_SIZE);
     orb->setNLevels(ORB_N_OCTAVE_LAYERS);
     orb->setScaleFactor(ORB_SCALE);
-    orb->setMaxFeatures(ORB_N_FEATURE);
-    orb->setWTA_K(2);
-    orb->setScoreType(ORB::HARRIS_SCORE); // HARRIS_SCORE，标准Harris角点响应函数
-    orb->detectAndCompute(image1, Mat(), kp1, desp1);
+    orb->setMaxFeatures(ORB_N_FEATURE);                     //设置ORB特征点检测的最大特征点数量。与第1行代码中的参数ORB_N_FEATURE相同。
+    orb->setWTA_K(2);                                       //设置ORB特征描述子计算中的WTA_K参数。WTA_K是描述子计算时的选择像素数。
+    orb->setScoreType(ORB::HARRIS_SCORE);                   // HARRIS_SCORE，标准Harris角点响应函数
+    orb->detectAndCompute(image1, Mat(), kp1, desp1);       //使用ORB特征点检测和描述子计算器检测图像image1中的ORB特征点，并计算对应的ORB描述子。检测到的特征点将存储在kp1中，计算得到的描述子将存储在desp1中。
     orb->detectAndCompute(image2, Mat(), kp2, desp2);
 
     vector< DMatch > matches;
 
     BFMatcher matcher_bf(NORM_HAMMING, true); //使用汉明距离度量二进制描述子，允许交叉验证
-    vector<DMatch> Matches_bf;
-    matcher_bf.match(desp1, desp2, matches);
+    vector<DMatch> Matches_bf;//没用
+    matcher_bf.match(desp1, desp2, matches);//用的matches
 
     cout<<"Find total "<<matches.size()<<" matches."<<endl;
 
@@ -52,7 +52,16 @@ int main( int argc, char** argv )
     vector<DMatch> matches_gms;
     vector<bool> vbInliers;
 
+    /**
+     * kp1 第一张图特征点
+     * image1.size() 第一张图像的宽和高 cv::Size
+     * kp2 第二张图特征点
+     * image2.size() 第二张图像的宽和高 cv::Size
+     * matches 特征点匹配的结果 vector< DMatch > matches;
+    */
+   //在构造函数中kp1 kp2中的像素坐标归一化后(0-1) 存入gms.mvP1 mvP2  构造函数中完成了网格初始化
     gms_matcher gms(kp1, image1.size(), kp2, image2.size(), matches);
+    //
     int num_inliers = gms.GetInlierMask(vbInliers, false, false);
 
     cout << "# Refine Matches (after GMS):" << num_inliers  << "/" << matches.size() <<endl;

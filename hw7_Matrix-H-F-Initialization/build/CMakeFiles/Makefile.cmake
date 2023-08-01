@@ -11,7 +11,6 @@ set(CMAKE_MAKEFILE_DEPENDS
   "CMakeFiles/3.16.3/CMakeCCompiler.cmake"
   "CMakeFiles/3.16.3/CMakeCXXCompiler.cmake"
   "CMakeFiles/3.16.3/CMakeSystem.cmake"
-  "/usr/lib/x86_64-linux-gnu/cmake/opencv4/OpenCVConfig-version.cmake"
   "/usr/local/opencv-3.4.5/share/OpenCV/OpenCVConfig-version.cmake"
   "/usr/local/opencv-3.4.5/share/OpenCV/OpenCVConfig.cmake"
   "/usr/local/opencv-3.4.5/share/OpenCV/OpenCVModules-release.cmake"
