@@ -1,3 +1,0 @@
-/home/ctx/ORB_SLAM_challenge/hw7_Matrix-H-F-Initialization/build/CMakeFiles/rebuild_cache.dir
-/home/ctx/ORB_SLAM_challenge/hw7_Matrix-H-F-Initialization/build/CMakeFiles/edit_cache.dir
-/home/ctx/ORB_SLAM_challenge/hw7_Matrix-H-F-Initialization/build/CMakeFiles/hf.dir
