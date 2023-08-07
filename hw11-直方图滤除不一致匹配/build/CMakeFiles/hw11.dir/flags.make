@@ -6,5 +6,5 @@ CXX_FLAGS = -g   -std=c++11 -std=c++11
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/usr/include/eigen3 -I/home/ctx/ORB_SLAM_challenge/hw11-直方图滤除不一致匹配/build/include -I/home/ctx/ORB_SLAM_challenge/hw11-直方图滤除不一致匹配/include -isystem /usr/include/opencv4 
+CXX_INCLUDES = -I/usr/include/eigen3 -I/home/ctx/ORB_SLAM_challenge/hw11-直方图滤除不一致匹配/build/include -I/home/ctx/ORB_SLAM_challenge/hw11-直方图滤除不一致匹配/include -isystem /usr/local/opencv-3.4.5/include -isystem /usr/local/opencv-3.4.5/include/opencv 
 

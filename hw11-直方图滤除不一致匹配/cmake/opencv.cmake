@@ -1,4 +1,4 @@
-find_package(OpenCV REQUIRED)
+find_package(OpenCV 3.4.5 REQUIRED)
 
 include_directories(${OpenCV_INCLUDE_DIRS})
 
