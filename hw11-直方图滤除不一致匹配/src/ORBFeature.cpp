@@ -129,14 +129,15 @@ namespace ORB {
         std::vector<cv::KeyPoint> keypoints_1, keypoints_2;
         cv::Mat descriptors_1, descriptors_2;
         std::vector<cv::DMatch> matches, good_matches;
-
+        //用OpenCV函数选择暴力匹配进行特征匹配，并把描述子距离足够小的特征点匹配关系存入good_matches
         FindFeatureMatches(image_one, image_two, keypoints_1, keypoints_2, matches, good_matches);
 
+        //显示暴力匹配
         cv::Mat img;
         cv::drawMatches(image_one, keypoints_1, image_two, keypoints_2, matches, img);
         cv::imshow("all matches", img);
         cv::waitKey();
-
+        //显示描述子剔除后的匹配
         cv::Mat img_goodmatch;
         cv::drawMatches(image_one, keypoints_1, image_two, keypoints_2, good_matches, img_goodmatch);
         cv::imshow("good matches", img_goodmatch);
@@ -217,19 +218,22 @@ namespace ORB {
         cv::Mat descriptors_one, descriptors_two;
         if (1)
         {   
+            //OpenCV提取ORB特征点
             ExtractORB(src_image_one, vkeypoints_one, descriptors_one);
             ExtractORB(src_image_two, vkeypoints_two, descriptors_two);
         }
         else {
+            //ORB_SLAM2提取ORB特征点
             ORBSLAM2ExtractORB(src_image_one, vkeypoints_one, descriptors_one);
             ORBSLAM2ExtractORB(src_image_two, vkeypoints_two, descriptors_two);
         }
-
+        //选择暴力匹配
         cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create("BruteForce-Hamming");
         matcher->match(descriptors_one, descriptors_two, matches);
         double min_dist = 10000, max_dist = 0;
         for (int i = 0; i < descriptors_one.rows; i++)
         {
+            //第i对特征匹配点描述子的距离
             double dist = matches[i].distance;
             if (dist < min_dist) min_dist = dist;
             if (dist > max_dist) max_dist = dist;
@@ -245,6 +249,7 @@ namespace ORB {
 
         for (int i = 0; i < descriptors_one.rows; i++)
         {
+            //如果第i对特征匹配点描述子距离足够小，就存入good_matches
             if (matches[i].distance <= std::max(2 * min_dist, 30.0))
             {
                 good_matches.push_back(matches[i]);
@@ -261,6 +266,7 @@ namespace ORB {
         return cv::Scalar(255 * depth / th_range, 0, 255 * (1 - depth / th_range));
     }
 
+    //用OpenCV提取ORB特征点并计算描述子
     void ORBFeature::ExtractORB(const cv::Mat& image, std::vector<cv::KeyPoint>& vkeypoints, cv::Mat& descriptors)
     {
         cv::Ptr<cv::FeatureDetector> detector = cv::ORB::create();
@@ -270,6 +276,7 @@ namespace ORB {
         descriptor->compute(image, vkeypoints, descriptors);
     }
 
+    //图像去畸变
     void ORBFeature::UndistortImage(const cv::Mat& image, cv::Mat& outImage)
     {
         int rows = image.rows;
@@ -310,6 +317,7 @@ namespace ORB {
         orb_extractor_ptr->operator()(srcImage, cv::Mat(), vkeypoints, descriptors);       
     }
 
+    //计算两个描述子之间的汉明距离
     int ORBFeature::DescriptorDistance(const cv::Mat &a, const cv::Mat &b)
     {
         const int *pa = a.ptr<int32_t>();
