@@ -3,6 +3,10 @@
 namespace ORB {
     
     const int HISTO_LENGTH = 30;
+    //作业添加的
+    const int TH_HIGH = 100;
+    const int TH_LOW = 50;
+    const float mfNNratio = 0.7;
 
     ORBFeature::ORBFeature(const std::string& image_one_path, const std::string& image_two_path, const std::string& config_path)
     {
@@ -17,8 +21,9 @@ namespace ORB {
     {  
         std::vector<cv::KeyPoint> keypoints_1, keypoints_2;
         std::vector<cv::DMatch> matches, des_good_matches, good_matches;
+        //matches中是OpenCV暴力匹配的结果，des_good_matches是用描述子距离筛选过后的匹配结果
         FindFeatureMatches(image_one, image_two, keypoints_1, keypoints_2, matches, des_good_matches);
-
+        //暴力匹配结果
         cv::Mat img;
         cv::drawMatches(image_one, keypoints_1, image_two, keypoints_2, matches, img);
         cv::imshow("all matches", img);
@@ -26,13 +31,14 @@ namespace ORB {
         cv::waitKey(0);
 
         /************************你需要完成的函数*************************************/
+        //直方图匹配后的结果存入good_matches
         UseHistConsistency(keypoints_1, keypoints_2, matches, good_matches);
         cv::Mat good_img;
         cv::drawMatches(image_one, keypoints_1, image_two, keypoints_2, good_matches, good_img);
         cv::imshow("hist_match", good_img);
         cv::imwrite("hist_match.jpg",good_img);
         cv::waitKey(0);
-
+        //描述子距离筛选后的匹配结果
         cv::Mat des_img;
         cv::drawMatches(image_one, keypoints_1, image_two, keypoints_2, des_good_matches, des_img);
         cv::imshow("des_match", des_img);
@@ -53,8 +59,115 @@ namespace ORB {
         /**
          *  请您使用直方图滤除不一致的匹配点对。
          */
-        
-    }
+        // int nmatches=0;
+        //vnMatches12 = std::vector<int>(F1.mvKeysUn.size(),-1);
+        //建直方图
+        std::vector<int> rotHist[HISTO_LENGTH];
+        for(int i=0;i<HISTO_LENGTH;i++)
+            rotHist[i].reserve(500);
+        const float factor = HISTO_LENGTH/360.f;
+
+        std::vector<int> vMatchedDistance(keypoints_2.size(),0x7fffffff);
+        //索引是keypoints_1的索引，值是keypoints_2的索引
+        std::vector<int> vnMatches12(keypoints_1.size(),-1);
+        //存描述子距离，第一层是keypoints_1的索引，第二层是keypoints_2的索引
+        cv::Mat matches_dist(keypoints_1.size(),keypoints_2.size(),CV_32FC1);
+        matches_dist.setTo(-1);
+
+        //遍历所有的暴力匹配关系
+        // for(std::size_t imatch=0, imatch_end=matches.size(); imatch<imatch_end; imatch++)
+        for(auto it = matches.begin(); it != matches.end(); ++it)
+        {
+            //取出对应的keypoints_1和keypoints_2中的匹配点对的索引和描述子距离信息
+            // std::size_t i1=matches[imatch].queryIdx;
+            // std::size_t i2=matches[imatch].trainIdx;
+            std::size_t i1 = it->queryIdx;
+            std::size_t i2 = it->trainIdx;
+            float dist = it->distance;
+
+            cv::KeyPoint kp1 = keypoints_1[i1];
+            int level1 = kp1.octave;
+            if(level1>0)
+                continue;
+
+            int bestDist = 0x7fffffff;
+            int bestDist2 = 0x7fffffff;
+            int bestIdx2 = -1;
+
+            if(vMatchedDistance[i2]<=dist)
+                    continue;
+
+            if(dist<bestDist)
+            {
+                bestDist2=bestDist;
+                bestDist=dist;
+                bestIdx2=i2;
+            }
+            else if(dist<bestDist2)
+            {
+                bestDist2=dist;
+            }
+
+            if(bestDist<=TH_LOW)
+            {
+                if(bestDist<(float)bestDist2*mfNNratio)
+                {
+                    //更新最短描述子距离
+                    vMatchedDistance[bestIdx2]=bestDist;
+                    // if(mbCheckOrientation)
+                    if(1)
+                    {
+                        float rot = keypoints_1[i1].angle-keypoints_2[bestIdx2].angle;
+                        if(rot<0.0)
+                            rot+=360.0f;
+                        int bin = round(rot*factor);
+                        if(bin==HISTO_LENGTH)
+                            bin=0;
+                        assert(bin>=0 && bin<HISTO_LENGTH);
+                        rotHist[bin].push_back(i1);
+                        //每当把一个匹配关系放入直方图时，把keypoints_1和keypoints_2的索引存起来
+                        vnMatches12[i1]=i2;
+                        //把描述子距离存下来
+                        matches_dist.at<float>(i1,i2)=dist;
+                    }
+                }
+            }
+        }//直方图建立完成
+
+        // if(mbCheckOrientation)
+        if(1)
+        {
+            int ind1=-1;
+            int ind2=-1;
+            int ind3=-1;
+
+            this->ComputeThreeMaxima(rotHist,HISTO_LENGTH,ind1,ind2,ind3);
+
+            for(int i=0; i<HISTO_LENGTH; i++)
+            {
+                //把直方图前三的结果的匹配关系存到新的匹配关系中
+                if(i==ind1 || i==ind2 || i==ind3)
+                {
+                    for(std::size_t j=0, jend=rotHist[i].size(); j<jend; j++)
+                    {
+                        //idx1是keypoints_1中的索引
+                        int idx1 = rotHist[i][j];
+                        //把对应的keypoints_2中的索引提取出来
+                        int idx2 = vnMatches12[idx1];
+                        //还要取出对应的描述子距离
+                        float descriptor_dist=matches_dist.at<float>(idx1,idx2);
+                        
+                        cv::DMatch final_match;
+                        final_match.queryIdx = idx1;
+                        final_match.trainIdx = idx2;
+                        final_match.distance = descriptor_dist;
+                        good_matches.push_back(final_match);
+                    }
+                }  
+            }
+        }
+        return;
+    }//作业框架结束
 
     /**
      * @brief 筛选出在旋转角度差落在在直方图区间内数量最多的前三个bin的索引
@@ -62,8 +175,8 @@ namespace ORB {
      * @param[in] histo         匹配特征点对旋转方向差直方图
      * @param[in] L             直方图尺寸
      * @param[in & out] ind1          bin值第一大对应的索引
-     * @param[in & out] ind2          bin值第二大对应的索引
      * @param[in & out] ind3          bin值第三大对应的索引
+     * @param[in & out] ind2          bin值第二大对应的索引
      */
     void ORBFeature::ComputeThreeMaxima(std::vector<int>* histo, const int L, int &ind1, int &ind2, int &ind3)
     {
@@ -124,6 +237,7 @@ namespace ORB {
         }
     }
 
+    //没调用这个函数
     void ORBFeature::MatchImage()
     {
         std::vector<cv::KeyPoint> keypoints_1, keypoints_2;

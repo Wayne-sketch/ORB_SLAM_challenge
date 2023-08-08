@@ -27,6 +27,7 @@
 #include <pcl/visualization/cloud_viewer.h>
 
 namespace ORB_SLAM2 {
+//构造函数
 PointCloudMapping::PointCloudMapping(double resolution_, double meank_,
                                      double thresh_) {
   //  统计滤波器设置
@@ -44,7 +45,7 @@ PointCloudMapping::PointCloudMapping(double resolution_, double meank_,
   globalMap = boost::make_shared<PointCloud>();
 
   // TODO: 绑定并启动显示线程, 使用Viewer()函数
-
+  viewerThread.reset(new std::thread(PointCloudMapping::Viewer));
   //  标记参数
   loopbusy = false;
   cloudbusy = false;
@@ -80,9 +81,10 @@ void PointCloudMapping::InsertKeyFrame(KeyFrame *kf, cv::Mat &color,
   PointCloude *pointcloude = new PointCloude;
   //  记录关键帧索引
   (*pointcloude).pcID = idk;
-  //  将关键帧位姿Tcw转化为符合PCL格式
+  //  将关键帧位姿Tcw转化为符合PCL格式 T是3X4的矩阵
   (*pointcloude).T = ORB_SLAM2::Converter::toSE3Quat(kf->GetPose());
   //  联合深度图和RGB图像，找到对应点的空间位置，并且构造空间点云．
+  //pcE是pcl::PointCloud<pcl::PointXYZRGBA>::Ptr
   (*pointcloude).pcE = GeneratePointCloud(kf, color, depth);
 
   {
@@ -95,13 +97,16 @@ void PointCloudMapping::InsertKeyFrame(KeyFrame *kf, cv::Mat &color,
   keyFrameUpdated.notify_one();
 }
 
+//根据关键帧，结合RGB图像和深度图像，返回构造出的空间点云的指针
 pcl::PointCloud<PointCloudMapping::PointT>::Ptr
 PointCloudMapping::GeneratePointCloud(KeyFrame *kf, cv::Mat &color,
                                       cv::Mat &depth) {
+  //临时的点云指针
   PointCloud::Ptr tmp(new PointCloud());
   for (int m = 0; m < depth.rows; m += 3) {
     for (int n = 0; n < depth.cols; n += 3) {
       // TODO: 反投影生成点云
+      //反投影就是将深度图中的像素点取出，利用相机内参矩阵投影至三维空间中，同时把对应的RGB图像中的像素点也提取出来，把这些所有信息一起存到空间点云中
       // 提示： 注意点云有效范围
     }
   }
