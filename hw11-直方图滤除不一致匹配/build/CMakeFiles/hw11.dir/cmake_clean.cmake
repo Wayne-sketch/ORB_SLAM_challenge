@@ -1,5 +1,6 @@
 file(REMOVE_RECURSE
   "CMakeFiles/hw11.dir/src/apps/hw11.cpp.o"
+  "CMakeFiles/hw11.dir/src/apps/hw11.cpp.o.d"
   "hw11"
   "hw11.pdb"
 )
