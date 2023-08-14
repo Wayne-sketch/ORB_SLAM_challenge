@@ -23,8 +23,8 @@ using namespace cv;
 #define minInliers 6
 #define maxIterations 300
 
-int mnInliersi;
-std::vector<bool> mvbInliersi;
+int mnInliersi;                             // 在某次迭代的过程中经过投影误差进行的inlier检测得到的内点数目
+std::vector<bool> mvbInliersi;              // 内点标记,下标和N,mvpMapPoints1等一致,用于记录某次迭代过程中的内点情况
 vector<KeyPoint> keypoints_1, keypoints_2;
 std::vector<cv::Mat> pts1, pts2;
 std::vector<cv::Mat> mvP1im1;
@@ -32,8 +32,14 @@ std::vector<cv::Mat> mvP2im2;
 
 vector<size_t> vAvailableIndices;
 std::vector<size_t> mvnIndices1;
-cv::Mat mT12i;
-cv::Mat mT21i;
+cv::Mat mT12i;                              // 存储某次RANSAC过程中得到的变换矩阵
+cv::Mat mT21i;                              // 上面的逆
+
+// Current Estimation
+cv::Mat mR12i;                              // 存储某次RANSAC过程中得到的旋转
+cv::Mat mt12i;                              // 存储某次RANSAC过程中得到的平移
+float ms12i;                                // 存储某次RANSAC过程中得到的缩放系数
+
 
 std::vector<size_t> mvnMaxError1;           // 当前关键帧中的某个特征点所允许的最大不确定度(和所在的金字塔图层有关)
 std::vector<size_t> mvnMaxError2;           // 闭环关键帧中的某个特征点所允许的最大不确定度(同上)

@@ -122,17 +122,19 @@ void CheckInliers()
  */
 cv::Mat ComputeSim3(vector<cv::Mat> &pts1, vector<cv::Mat> &pts2, vector<size_t> &vAvailableIndices)
 {
+    //RANSAC参数
     double mRansacProb = probability;              // 0.99
     int mRansacMinInliers = minInliers;         // 20
     int mRansacMaxIts = maxIterations;          // 最大迭代次数 300
 
     // 匹配点的数目
     int N1 = vAvailableIndices.size(); // number of correspondences
-
+    std::cout << "N1:" << N1 << endl;
     // 内点标记向量
     mvbInliersi.resize(N1);
 
     // Adjust Parameters according to number of correspondences
+    //随机取一个点是内点的概率
     float epsilon = (float)mRansacMinInliers/N1;
 
     // Set RANSAC iterations according to probability, epsilon, and max iterations 
@@ -159,7 +161,8 @@ cv::Mat ComputeSim3(vector<cv::Mat> &pts1, vector<cv::Mat> &pts2, vector<size_t>
     // 当前正在进行的迭代次数
     int mnIterations = 0;
     
-    bool bNoMore = false;                        // 现在还没有达到最好的效果
+    bool bNoMore = false;    
+    // 现在还没有达到最好的效果
     vector<bool> vbInliers = vector<bool>(N1,false);    // 的确和最初传递给这个解算器的地图点向量是保持一致
 
     // Step 1 如果匹配点比要求的最少内点数还少，不满足Sim3 求解条件，返回空
@@ -211,10 +214,122 @@ cv::Mat ComputeSim3(vector<cv::Mat> &pts1, vector<cv::Mat> &pts2, vector<size_t>
         
         /***************请开始你的代码*****************/
         // 参考ORB-SLAM2源码补充
+        // Sim3计算过程参考论文:
+        // Horn 1987, Closed-form solution of absolute orientataion using unit quaternions
 
+        // Step 1: 定义3D点质心及去质心后的点
+        // O1和O2分别为P1和P2矩阵中3D点的质心
+        // Pr1和Pr2为减去质心后的3D点
+        cv::Mat Pr1(P1.size(),P1.type()); // Relative coordinates to centroid (set 1)
+        cv::Mat Pr2(P2.size(),P2.type()); // Relative coordinates to centroid (set 2)
+        cv::Mat O1(3,1,Pr1.type()); // Centroid of P1
+        cv::Mat O2(3,1,Pr2.type()); // Centroid of P2
 
+        ComputeCentroid(P1,Pr1,O1);
+        ComputeCentroid(P2,Pr2,O2);
 
+        // Step 2: 计算论文中三维点数目n>3的 M 矩阵。这里只使用了3个点
+        // Pr2 对应论文中 r_l,i'，Pr1 对应论文中 r_r,i',计算的是P2到P1的Sim3，论文中是left 到 right的Sim3
+        cv::Mat M = Pr2*Pr1.t();
 
+        // Step 3: 计算论文中的 N 矩阵
+
+        double N11, N12, N13, N14, N22, N23, N24, N33, N34, N44;
+
+        cv::Mat N(4,4,P1.type());
+
+        N11 = M.at<float>(0,0)+M.at<float>(1,1)+M.at<float>(2,2);   // Sxx+Syy+Szz
+        N12 = M.at<float>(1,2)-M.at<float>(2,1);                    // Syz-Szy
+        N13 = M.at<float>(2,0)-M.at<float>(0,2);                    // Szx-Sxz
+        N14 = M.at<float>(0,1)-M.at<float>(1,0);                    // ...
+        N22 = M.at<float>(0,0)-M.at<float>(1,1)-M.at<float>(2,2);
+        N23 = M.at<float>(0,1)+M.at<float>(1,0);
+        N24 = M.at<float>(2,0)+M.at<float>(0,2);
+        N33 = -M.at<float>(0,0)+M.at<float>(1,1)-M.at<float>(2,2);
+        N34 = M.at<float>(1,2)+M.at<float>(2,1);
+        N44 = -M.at<float>(0,0)-M.at<float>(1,1)+M.at<float>(2,2);
+
+        N = (cv::Mat_<float>(4,4) << N11, N12, N13, N14,
+                                    N12, N22, N23, N24,
+                                    N13, N23, N33, N34,
+                                    N14, N24, N34, N44);
+
+        // Step 4: 特征值分解求最大特征值对应的特征向量，就是我们要求的旋转四元数
+        cv::Mat eval, evec;  // val vec
+        // 特征值默认是从大到小排列，所以evec[0] 是最大值
+        cv::eigen(N,eval,evec); 
+
+        // N 矩阵最大特征值（第一个特征值）对应特征向量就是要求的四元数（q0 q1 q2 q3），其中q0 是实部
+        // 将(q1 q2 q3)放入vec（四元数的虚部）
+        cv::Mat vec(1,3,evec.type());
+        (evec.row(0).colRange(1,4)).copyTo(vec); //extract imaginary part of the quaternion (sin*axis)
+
+        // Rotation angle. sin is the norm of the imaginary part, cos is the real part
+        // 四元数虚部模长 norm(vec)=sin(theta/2), 四元数实部 evec.at<float>(0,0)=q0=cos(theta/2)
+        // 这一步的ang实际是theta/2，theta 是旋转向量中旋转角度
+        // ? 这里也可以用 arccos(q0)=angle/2 得到旋转角吧
+        double ang=atan2(norm(vec),evec.at<float>(0,0));
+
+        // vec/norm(vec)归一化得到归一化后的旋转向量,然后乘上角度得到包含了旋转轴和旋转角信息的旋转向量vec
+        vec = 2*ang*vec/norm(vec); //Angle-axis x. quaternion angle is the half
+
+        mR12i.create(3,3,P1.type());
+        // 旋转向量（轴角）转换为旋转矩阵
+        cv::Rodrigues(vec,mR12i); // computes the rotation matrix from angle-axis
+
+        // Step 5: Rotate set 2
+        // 利用刚计算出来的旋转将三维点旋转到同一个坐标系，P3对应论文里的 r_l,i', Pr1 对应论文里的r_r,i'
+        cv::Mat P3 = mR12i*Pr2;
+
+        // Step 6: 计算尺度因子 Scale
+
+        // 论文中有2个求尺度方法。一个是p632右中的位置，考虑了尺度的对称性
+        // 代码里实际使用的是另一种方法，这个公式对应着论文中p632左中位置的那个
+        // Pr1 对应论文里的r_r,i',P3对应论文里的 r_l,i',(经过坐标系转换的Pr2), n=3, 剩下的就和论文中都一样了
+        double nom = Pr1.dot(P3);
+        // 准备计算分母
+        cv::Mat aux_P3(P3.size(),P3.type());
+        aux_P3=P3;
+        // 先得到平方
+        cv::pow(P3,2,aux_P3);
+        double den = 0;
+
+        // 然后再累加
+        for(int i=0; i<aux_P3.rows; i++)
+        {
+            for(int j=0; j<aux_P3.cols; j++)
+            {
+                den+=aux_P3.at<float>(i,j);
+            }
+        }
+
+        ms12i = nom/den;
+
+        // Step 7: 计算平移Translation
+        mt12i.create(1,3,P1.type());
+        // 论文中平移公式
+        mt12i = O1 - ms12i*mR12i*O2;
+
+        // Step 8: 计算双向变换矩阵，目的是在后面的检查的过程中能够进行双向的投影操作
+
+        // Step 8.1 用尺度，旋转，平移构建变换矩阵 T12
+        mT12i = cv::Mat::eye(4,4,P1.type());
+
+        cv::Mat sR = ms12i*mR12i;
+
+        //         |sR t|
+        // mT12i = | 0 1|
+        sR.copyTo(mT12i.rowRange(0,3).colRange(0,3));
+        mt12i.copyTo(mT12i.rowRange(0,3).col(3));
+
+        // Step 8.2 T21
+
+        mT21i = cv::Mat::eye(4,4,P1.type());
+
+        cv::Mat sRinv = (1.0/ms12i)*mR12i.t();
+        sRinv.copyTo(mT21i.rowRange(0,3).colRange(0,3));
+        cv::Mat tinv = -sRinv*mt12i;
+        tinv.copyTo(mT21i.rowRange(0,3).col(3));
 
         /***************结束代码*********************/
         
@@ -242,7 +357,7 @@ cv::Mat ComputeSim3(vector<cv::Mat> &pts1, vector<cv::Mat> &pts2, vector<size_t>
                 for(int i=0; i<N1; i++)
                     if(mvbInliersi[i])
                         // 标记为内点
-                        vbInliers[mvnIndices1[i]] = true;
+                        vbInliers[vAvailableIndices[i]] = true;
                 return mBestT12;
             } // 如果当前次迭代已经合格了,直接返回
         } // 更新最多的内点数目
@@ -256,7 +371,15 @@ cv::Mat ComputeSim3(vector<cv::Mat> &pts1, vector<cv::Mat> &pts2, vector<size_t>
 }
 
 
-
+/**
+ * @brief        传入两张图片，计算并匹配特征点
+ * @param[in] img_1 第一张图片
+ * @param[in] img_2 第二张图片
+ * @param[in out] keypoints_1  存第一张图片里的特征点
+ * @param[in out] keypoints_2  存第二张图片里的特征点
+ * @param[in out] matches  存有效的匹配关系，描述子距离过大的不要了
+ * @return 
+*/
 void find_feature_matches(const Mat &img_1, const Mat &img_2,
                           std::vector<KeyPoint> &keypoints_1,
                           std::vector<KeyPoint> &keypoints_2,
@@ -327,7 +450,7 @@ int main(int argc, char **argv) {
   assert(img_1.data && img_2.data && "Can not load images!");
 
 
-  // vector<KeyPoint> keypoints_1, keypoints_2;
+  vector<KeyPoint> keypoints_1, keypoints_2;
   vector<DMatch> matches;
   find_feature_matches(img_1, img_2, keypoints_1, keypoints_2, matches);
   cout << "一共找到了" << matches.size() << "组匹配点" << endl;
@@ -338,7 +461,8 @@ int main(int argc, char **argv) {
   assert(depth1.data && depth2.data && "Can not load images!");
 
   size_t idx = 0;
-
+  vAvailableIndices.reserve(matches.size());
+  //遍历所有匹配关系
   for (DMatch m:matches) {
     ushort d1 = depth1.ptr<unsigned short>(int(keypoints_1[m.queryIdx].pt.y))[int(keypoints_1[m.queryIdx].pt.x)];
     ushort d2 = depth2.ptr<unsigned short>(int(keypoints_2[m.trainIdx].pt.y))[int(keypoints_2[m.trainIdx].pt.x)];
@@ -348,11 +472,12 @@ int main(int argc, char **argv) {
     Mat mat1(2,1,CV_32F);
     Mat mat2(2,1,CV_32F);
     mat1.at<Vec2f>(0,0) = Vec2f(keypoints_1[m.queryIdx].pt.x,keypoints_1[m.queryIdx].pt.y);
+    //匹配特征点对第一张图中的xy坐标
     mvP1im1.push_back(mat1);
     float SigmaSquare1 = ComputerSigmaSquare(keypoints_1[m.queryIdx]);
 
     mvnMaxError1.push_back(9.210*SigmaSquare1);
-
+    //匹配特征点对第二张图中的xy坐标
     mat2.at<Vec2f>(0,0) = Vec2f(keypoints_2[m.trainIdx].pt.x,keypoints_2[m.trainIdx].pt.y);
     mvP2im2.push_back(mat2);
     float SigmaSquare2 = ComputerSigmaSquare(keypoints_2[m.trainIdx]);
@@ -363,8 +488,37 @@ int main(int argc, char **argv) {
 
     /***************请开始你的代码*****************/
     // 构建点对
-
-
+    //目前在遍历两张图的匹配关系
+    //构建出pts1 pts2 每一列是一个匹配特征点在自身相机坐标系下的三维坐标
+    //vAvailableIndices中存储的id是pts1 pts2中匹配点对的id
+    // kp1和kp2是匹配的图像特征点
+    // const cv::KeyPoint &kp1 = keypoints_1[m.queryIdx];
+    // const cv::KeyPoint &kp2 = keypoints_2[m.trainIdx];
+    //计算三维点坐标 结果要3行1列的形式
+    //取出相机内参数
+    const float &fx = K.at<float>(0,0);
+    const float &fy = K.at<float>(1,1);
+    const float &cx = K.at<float>(0,2);
+    const float &cy = K.at<float>(1,2);
+    //像素坐标转相机系坐标
+    float pt1_normalization_x = (mat1.at<float>(0, 0)-cx)/fx*static_cast<float>(d1);
+    float pt1_normalization_y = (mat1.at<float>(1, 0)-cy)/fy*static_cast<float>(d1);
+    float pt1_normalization_z = static_cast<float>(d1);
+    float pt2_normalization_x = (mat2.at<float>(0, 0)-cx)/fx*static_cast<float>(d2);
+    float pt2_normalization_y = (mat2.at<float>(1, 0)-cy)/fy*static_cast<float>(d2);
+    float pt2_normalization_z = static_cast<float>(d2);
+    //第一张图中特征点的相机系坐标
+    // cv::Mat pt1_normalization = (Mat_<float>(3, 1) << pt1_normalization_x, pt1_normalization_y, pt1_normalization_z);
+    //第二张图中特征点的相机系坐标
+    // cv::Mat pt2_normalization = (Mat_<float>(3, 1) << pt2_normalization_x, pt2_normalization_y, pt2_normalization_z);
+    //存入pts1 pts2
+    pts1.push_back((cv::Mat_<float>(3, 1) << pt1_normalization_x, pt1_normalization_y, pt1_normalization_z));
+    pts2.push_back((cv::Mat_<float>(3, 1) << pt2_normalization_x, pt2_normalization_y, pt2_normalization_z));
+    // 所有有效三维点的索引
+    //下面这句会导致内存错误
+    vAvailableIndices.push_back(idx);
+    std::cout << "idx:" << idx << endl;
+    idx++;
      /***************结束代码*********************/
   }
 
